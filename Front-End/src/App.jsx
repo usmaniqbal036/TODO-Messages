@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import SocketProvider from './context/SocketProvider';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -30,44 +29,42 @@ const GuestRoute = ({ children }) => {
 
 
 const HomeRoute = () => {
-  useLocation(); 
+  useLocation();
   return sessionStorage.getItem('token') ? <Home /> : <Landing />;
 };
 
 const App = () => {
   return (
     <BrowserRouter>
-      <SocketProvider>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<HomeRoute />} />
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<HomeRoute />} />
 
-            <Route
-              path="/login"
-              element={
-                <GuestRoute>
-                  <Login />
-                </GuestRoute>
-              }
-            />
-            <Route
-              path="/register"
-              element={
-                <GuestRoute>
-                  <Register />
-                </GuestRoute>
-              }
-            />
+          <Route
+            path="/login"
+            element={
+              <GuestRoute>
+                <Login />
+              </GuestRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <GuestRoute>
+                <Register />
+              </GuestRoute>
+            }
+          />
 
-            <Route element={<RequireAuth />}>
-              <Route path="/todos" element={<Todos />} />
-              <Route path="/messages" element={<Messages />} />
-            </Route>
+          <Route element={<RequireAuth />}>
+            <Route path="/todos" element={<Todos />} />
+            <Route path="/messages" element={<Messages />} />
           </Route>
+        </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </SocketProvider>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 };

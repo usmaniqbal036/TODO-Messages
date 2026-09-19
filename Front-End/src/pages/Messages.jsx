@@ -1,18 +1,16 @@
-
-
-
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { HiChat, HiPlus, HiX } from 'react-icons/hi';
 import api from '../api/axios';
 import MessageBubble from '../components/MessageBubble';
 import { getErrorMessage } from '../utils/getErrorMessage';
-import { useSocket } from '../context/socketContext';
+
+const CONVERSATIONS_POLL_MS = 5000;
+const MESSAGES_POLL_MS = 3000;
 
 const Messages = () => {
   const [conversations, setConversations] = useState([]);
-  const [activeChat, setActiveChat] = useState(null); 
+  const [activeChat, setActiveChat] = useState(null);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -23,13 +21,11 @@ const Messages = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const chatEndRef = useRef(null);
-  const activeChatRef = useRef(null); 
+  const activeChatRef = useRef(null);
 
-  const { subscribe, setActiveChatUserId } = useSocket();
   const location = useLocation();
   const navigate = useNavigate();
 
-  
   const currentUser = JSON.parse(sessionStorage.getItem('user') || 'null');
   const currentUserId = currentUser?.id || currentUser?._id;
 
@@ -44,38 +40,29 @@ const Messages = () => {
     }
   }, []);
 
+  // Sidebar ko baar baar refresh karo (naye conversations/unread counts ke liye)
   useEffect(() => {
-    api
-      .get('/api/messages/conversations')
-      .then((res) => setConversations(res.data))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load conversations')))
-      .finally(() => setLoading(false));
-  }, []);
+    fetchConversations();
+    const id = setInterval(fetchConversations, CONVERSATIONS_POLL_MS);
+    return () => clearInterval(id);
+  }, [fetchConversations]);
 
-  
-  
   const openConversation = async (partner) => {
     try {
       const res = await api.get(`/api/messages/${partner._id}`);
       setActiveChat({ user: partner, messages: res.data });
       setShowModal(false);
       setSearchTerm('');
-      fetchConversations(); 
+      fetchConversations();
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to load messages'));
     }
   };
 
-  
-  
   useEffect(() => {
     activeChatRef.current = activeChat;
-    setActiveChatUserId(activeChat?.user?._id ?? null);
-  }, [activeChat, setActiveChatUserId]);
+  }, [activeChat]);
 
-  useEffect(() => () => setActiveChatUserId(null), [setActiveChatUserId]);
-
-  
   const openUserFromPopup = location.state?.openUser;
   useEffect(() => {
     if (!openUserFromPopup) return;
@@ -84,67 +71,55 @@ const Messages = () => {
       .get(`/api/messages/${openUserFromPopup._id}`)
       .then((res) => {
         setActiveChat({ user: openUserFromPopup, messages: res.data });
-        fetchConversations(); 
+        fetchConversations();
       })
       .catch((err) => setError(getErrorMessage(err, 'Failed to load messages')));
 
-    navigate('/messages', { replace: true, state: null }); 
+    navigate('/messages', { replace: true, state: null });
   }, [openUserFromPopup, navigate, fetchConversations]);
 
-  
+  // Active chat ke messages ko poll karo — naye messages aane par merge karo
   useEffect(() => {
-    const offNew = subscribe('message:new', async (msg) => {
-      const partner = msg.sender._id === currentUserId ? msg.receiver : msg.sender;
-      const open = activeChatRef.current;
+    if (!activeChat) return;
 
-      if (open && open.user._id === partner._id) {
-        setActiveChat((prev) =>
-          prev && prev.user._id === partner._id && !prev.messages.some((m) => m._id === msg._id)
-            ? { ...prev, messages: [...prev.messages, msg] }
-            : prev
-        );
+    const partnerId = activeChat.user._id;
 
-        
-        if (msg.receiver._id === currentUserId) {
-          try {
-            await api.put(`/api/messages/${partner._id}/read`);
-          } catch {
-            
-          }
-        }
-      }
-
-      fetchConversations(); 
-    });
-
-    const offDeleted = subscribe('message:deleted', (data) => {
-      setActiveChat((prev) =>
-        prev ? { ...prev, messages: prev.messages.filter((m) => m._id !== data._id) } : prev
-      );
-      fetchConversations();
-    });
-
-    
-    const offConnect = subscribe('connect', async () => {
-      fetchConversations();
-      const open = activeChatRef.current;
-      if (!open) return;
+    const poll = async () => {
       try {
-        const res = await api.get(`/api/messages/${open.user._id}`);
-        setActiveChat((prev) =>
-          prev && prev.user._id === open.user._id ? { ...prev, messages: res.data } : prev
-        );
-      } catch {
-        
-      }
-    });
+        const res = await api.get(`/api/messages/${partnerId}`);
+        const latest = res.data;
 
-    return () => {
-      offNew();
-      offDeleted();
-      offConnect();
+        const current = activeChatRef.current;
+        if (!current || current.user._id !== partnerId) return;
+
+        const existingIds = new Set(current.messages.map((m) => m._id));
+        const incoming = latest.filter((m) => !existingIds.has(m._id));
+
+        if (incoming.length > 0) {
+          setActiveChat((prev) =>
+            prev && prev.user._id === partnerId ? { ...prev, messages: latest } : prev
+          );
+
+          const hasUnreadIncoming = incoming.some(
+            (m) => m.receiver._id === currentUserId
+          );
+          if (hasUnreadIncoming) {
+            try {
+              await api.put(`/api/messages/${partnerId}/read`);
+            } catch {
+              // ignore read-marking failures silently
+            }
+          }
+          fetchConversations();
+        }
+      } catch {
+        // silent fail on individual poll tick
+      }
     };
-  }, [subscribe, currentUserId, fetchConversations]);
+
+    const id = setInterval(poll, MESSAGES_POLL_MS);
+    return () => clearInterval(id);
+  }, [activeChat?.user?._id, currentUserId, fetchConversations]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -158,7 +133,7 @@ const Messages = () => {
       });
       setActiveChat((prev) =>
         prev.messages.some((m) => m._id === res.data._id)
-          ? prev 
+          ? prev
           : { ...prev, messages: [...prev.messages, res.data] }
       );
       setMessageText('');
@@ -305,7 +280,6 @@ const Messages = () => {
         </main>
       </div>
 
-      {}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div
