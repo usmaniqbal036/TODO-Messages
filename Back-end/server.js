@@ -1,6 +1,4 @@
 import 'dotenv/config';
-import dns from 'dns';
-import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { connectDB } from './config/db.js';
@@ -8,12 +6,8 @@ import config from './config/config.js';
 import authRoutes from './routes/authRoutes.js';
 import todoRoutes from './routes/todoRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
-import { initSocket } from './socket.js';
-
-dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const app = express();
-const httpServer = http.createServer(app);
 
 const clientOrigin =
   process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -22,10 +16,19 @@ app.use(cors({ origin: clientOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-connectDB();
-
-
-app.set('io', initSocket(httpServer, clientOrigin));
+// Database connect routes se PEHLE, race-condition-safe
+let isConnected = false;
+app.use(async (req, res, next) => {
+  try {
+    if (!isConnected) {
+      await connectDB();
+      isConnected = true;
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ message: 'Database connection failed' });
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/todos', todoRoutes);
@@ -42,6 +45,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-httpServer.listen(config.port, () => {
-  console.log(`${config.appName} is running on port ${config.port}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(config.port, () => {
+    console.log(`${config.appName} is running on port ${config.port}`);
+  });
+}
+
+export default app;
