@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
-import { emitToUsers } from '../socket.js';
+// import { emitToUsers } from '../socket.js';
 
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
