@@ -168,4 +168,8 @@ const deleteMessage = async (req, res) => {
     res.json({ message: 'Message deleted successfully' });
   } catch (error) {
     console.error('DeleteMessage error:', error.message);
-    res.status(500).json({ message: 'Server
+    res.status(500).json({ message: 'Server error deleting message' });
+  }
+};
+
+export { getMessages, getConversations, sendMessage, deleteMessage, markAsRead };
