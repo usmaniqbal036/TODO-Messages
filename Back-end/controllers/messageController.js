@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
-// import { emitToUsers } from '../socket.js';
 
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
@@ -24,7 +23,6 @@ const getMessages = async (req, res) => {
       .populate('sender', 'name email')
       .populate('receiver', 'name email');
 
-    
     await Message.updateMany(
       { sender: userId, receiver: req.user.id, read: false },
       { read: true }
@@ -52,7 +50,7 @@ const getConversations = async (req, res) => {
     const rows = await Promise.all(
       partnerIds.map(async (partnerId) => {
         const partner = await User.findById(partnerId).select('name email');
-        if (!partner) return null; 
+        if (!partner) return null;
 
         const [unreadCount, lastMessage] = await Promise.all([
           Message.countDocuments({ sender: partnerId, receiver: me, read: false }),
@@ -66,7 +64,6 @@ const getConversations = async (req, res) => {
 
         if (!lastMessage) return null;
 
-        
         return {
           user: partner,
           unreadCount,
@@ -141,9 +138,6 @@ const sendMessage = async (req, res) => {
       .populate('sender', 'name email')
       .populate('receiver', 'name email');
 
-    
-    emitToUsers(req.app, [req.user.id, receiver], 'message:new', JSON.parse(JSON.stringify(populated)));
-
     res.status(201).json(populated);
   } catch (error) {
     if (error.name === 'ValidationError') {
@@ -171,17 +165,7 @@ const deleteMessage = async (req, res) => {
       return res.status(404).json({ message: 'Message not found or not authorized' });
     }
 
-    emitToUsers(req.app, [message.sender, message.receiver], 'message:deleted', {
-      _id: message._id.toString(),
-      sender: message.sender.toString(),
-      receiver: message.receiver.toString(),
-    });
-
     res.json({ message: 'Message deleted successfully' });
   } catch (error) {
     console.error('DeleteMessage error:', error.message);
-    res.status(500).json({ message: 'Server error deleting message' });
-  }
-};
-
-export { getMessages, getConversations, sendMessage, deleteMessage, markAsRead };
+    res.status(500).json({ message: 'Server
